@@ -53,7 +53,7 @@ jobs:
 
       - name: install python packages
         run: |
-          pip install klayout SiEPIC siepic_ebeam_pdk packaging
+          pip install klayout SiEPIC siepic_ebeam_pdk packaging dft_aim_siepic_laser_pic_project1
 
       - name: download latest python-to-oas-gds artifact from triggering workflow 
         uses: dawidd6/action-download-artifact@v2
