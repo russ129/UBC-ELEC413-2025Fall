@@ -4,4 +4,5 @@ SiEPIC
 siepic_ebeam_pdk
 packaging
 IPython
+dft_aim_siepic_laser_pic_project1
 
