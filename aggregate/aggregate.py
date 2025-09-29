@@ -44,7 +44,7 @@ waveguide_type={'SiEPICfab_Shuksan_PDK':'Strip TE 1310 nm, w=350 nm',
                 'EBeam':'SiN Strip TE 1310 nm, w=800 nm'}
 waveguide_type_routing='SiN Strip TE 1310 nm, w=800 nm'
 
-blank_design = None # "design_ZZZ"  # Python design file, otherwise None for terminator.
+blank_design = "ELEC413_lukasc"  # Python design file, otherwise None for terminator.
 
 waveguide_pitch = 8
 dy_gcs = 127e3 # pitch of the fiber array
@@ -52,6 +52,9 @@ pad_pitch = 250000
 metal_width = 20000
 metal_width_laser = 50000
 metal_width_laser_heater = 20000
+laser_heater_distance = 100e3
+wg_heater_length = 500
+student_laser_in_y = 250e3
 
 # configuration
 top_cell_name = 'Shuksan_2025_10_SiN'
@@ -61,10 +64,10 @@ cell_Gap_Width = 8000
 cell_Gap_Height = 8000
 cells_rows_per_laser = 4 
 cells_columns_per_laser = 4
-height_PCM = 3e6  # reserve this space at the top of the chip
+height_PCM = 1e6  # reserve this space at the bottom of the chip
 laser_dy = (die_size-height_PCM) / (n_lasers+1) # spread out evenly
-laser_y = -die_size/2 #  
-laser_x = -die_edge  + 2e6
+laser_y = -die_size/2 + height_PCM   
+laser_x = -die_edge  + 1.5e6
 laser_design_offset = 4e6 # distance from the laser to the student design
 chip_Width = 8650000
 chip_Height1 = 8490000
@@ -77,14 +80,14 @@ tr_cutout_x = 7037000
 tr_cutout_y = 8494000
 
 filename_out = 'Shuksan'
-layers_keep = ['1/0', '1/2', '100/0', '101/0', '1/10', '68/0', '81/0', '10/0', '99/0', '200/0', '11/0', '201/0', '6/0', '998/0']
+layers_keep = ['1/99', '4/0', '11/0', '12/0', '13/0','1/10', '68/0', '81/0', '10/0', '99/0', '200/0', '131/155', '201/0', '998/0']
 layer_text = '10/0'
 layer_SEM = '200/0'
 layer_SEM_allow = ['edXphot1x', 'ELEC413','SiEPIC_Passives']  # which submission folder is allowed to include SEM images
 layers_move = [[[31,0],[1,0]]] # move shapes from layer 1 to layer 2
 dbu = 0.001
-log_siepictools = False
-framework_file =  'Framework_2025'
+log_siepictools = True
+framework_file =  'shuksan_pcm'
 ubc_file = None # 'UBC_static.oas'
 
 
@@ -354,7 +357,7 @@ for f in [f for f in files_in if '.oas' in f.lower() or '.gds' in f.lower()]:
             
             # connect to the laser tree  
             from SiEPIC.utils.layout import make_pin
-            make_pin(subcell, 'opt_laser', [0,10e3], 350, 'PinRec', 180, debug=False)
+            make_pin(subcell, 'opt_laser', [0, int(student_laser_in_y)], 800, 'PinRec', 180, debug=False)
               
             #x_out = inst_tree_out[0].pinPoint('opt2').x + 100e3
             # y_out = ytree_y - 934e3 / 2
@@ -404,7 +407,10 @@ if tech == "EBeam":
     
     cell_y = create_cell2(ly, 'ebeam_YBranch_te1310', library)
     #cell_splitter = ly.create_cell('splitter_2x2_1310', library)
-    #cell_heater = ly.create_cell('wg_heater', library)
+    cell_heater = ly.create_cell('wg_heater', library, 
+                                 {'length': wg_heater_length,
+                                  'waveguide_type': waveguide_type,
+                                      })
     #cell_waveguide = ly.create_cell('ebeam_pcell_taper',library, {
         #'wg_width1': 0.35,
         #'wg_width2': 0.352})
@@ -412,7 +418,7 @@ if tech == "EBeam":
     #    'wg_length': 40,
     #    'wg_width': 350})
     # cell_waveguide = ly.create_cell('w_straight',library)
-    #cell_pad = ly.create_cell('ebeam_BondPad', library)
+    cell_pad = ly.create_cell('ebeam_BondPad', library)
     #cell_gcA = ly.create_cell('GC_Air_te1310_BB', library)
     #cell_gcB = ly.create_cell('GC_Air_te1310_BB', library)
     cell_terminator = create_cell2(ly, 'ebeam_terminator_SiN_1310', library)
@@ -422,6 +428,8 @@ if tech == "EBeam":
 
 if not cell_y:
     raise Exception ('Cannot load 1x2 splitter cell; please check the script carefully.')
+if not cell_heater:
+    raise Exception ('Cannot load waveguide heater cell; please check the script carefully.')
 #if not cell_splitter:
 #    raise Exception ('Cannot load 2x2 splitter cell; please check the script carefully.')
 #if not cell_taper:
@@ -434,8 +442,8 @@ if not cell_terminator:
     raise Exception ('Cannot load terminator cell; please check the script carefully.')
 if not cell_laser:
     raise Exception ('Cannot load laser cell; please check the script carefully.')
-#if not cell_pad:
-#    raise Exception ('Cannot load bond pad cell; please check the script carefully.')
+if not cell_pad:
+    raise Exception ('Cannot load bond pad cell; please check the script carefully.')
 #if not cell_waveguide:
 #    raise Exception ('Cannot load Waveguide Straight cell; please check the script carefully.')
 
@@ -463,6 +471,36 @@ for row in range(0, n_lasers):
     t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), int(laser_y)) )
     inst_laser = top_cell.insert(pya.CellInstArray(cell_laser.cell_index(), t))
     
+    # heater, attach to the laser, then move it slight away from the laser
+    inst_heater =connect_cell(inst_laser, 'opt1', cell_heater, 'opt1')
+    inst_heater.transform(pya.Trans(laser_heater_distance, 0))
+    connect_pins_with_waveguide(inst_laser, 'opt1', inst_heater, 'opt1', waveguide_type=waveguide_type, turtle_A=[radius_um,90]) #turtle_B=[10,-90, 100, 90])
+
+    # Bond pad for phase shifter heater
+    t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + cell_pad.bbox().height()) )
+    inst_pad1 = top_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
+    t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + cell_pad.bbox().height() + pad_pitch) )
+    inst_pad2 = top_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
+    
+    # Metal routing
+    pts = [
+        inst_pad1.find_pin('m_pin_right').center,
+        [inst_heater.find_pin('elec1').center.x,
+        inst_pad1.find_pin('m_pin_right').center.y],
+        inst_heater.find_pin('elec1').center
+        ]
+    path = pya.Path(pts, 20e3)
+    s = top_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
+    pts = [
+        inst_pad2.find_pin('m_pin_right').center,
+        [inst_heater.find_pin('elec2').center.x,
+        inst_pad2.find_pin('m_pin_right').center.y],
+        inst_heater.find_pin('elec2').center
+        ]
+    path = pya.Path(pts, 20e3)
+    s = top_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
+        
+    
     # splitter tree
     from SiEPIC.utils.layout import y_splitter_tree
     if tree_depth == 4:
@@ -470,8 +508,8 @@ for row in range(0, n_lasers):
         n_y_gc_arrays = 1
         x_tree_offset = 0
         inst_tree_in, inst_tree_out, cell_tree = y_splitter_tree(top_cell, tree_depth=tree_depth, y_splitter_cell=cell_y, library="EBeam-SiN", wg_type=waveguide_type, draw_waveguides=True)
-        ytree_x = inst_laser.bbox().right + x_tree_offset
-        ytree_y = inst_laser.pinPoint('opt_1').y # - cell_tree.bbox().height()/2
+        ytree_x = inst_heater.bbox().right + x_tree_offset
+        ytree_y = inst_heater.pinPoint('opt2').y # - cell_tree.bbox().height()/2
         t = Trans(Trans.R0, ytree_x, ytree_y)
         top_cell.insert(CellInstArray(cell_tree.cell_index(), t))
     else:
@@ -482,8 +520,8 @@ for row in range(0, n_lasers):
     
     top_cell.show()
     
-    # Waveguide, laser to tree:
-    connect_pins_with_waveguide(inst_laser, 'opt1', inst_tree_in, 'opt_1', waveguide_type=waveguide_type, turtle_A=[10,90]) #turtle_B=[10,-90, 100, 90])
+    # Waveguide, heater to tree:
+    connect_pins_with_waveguide(inst_heater, 'opt2', inst_tree_in, 'opt_1', waveguide_type=waveguide_type, turtle_A=[radius_um,90]) #turtle_B=[10,-90, 100, 90])
 
     # instantiate the student cells, and waveguides
     # in batches for each y-tree
@@ -510,7 +548,7 @@ for row in range(0, n_lasers):
             ],
             turtle_A = [ # from the laser
                 ((cells_columns_per_laser-cell_column)*cells_rows_per_laser + (cells_rows_per_laser-cell_row))*waveguide_pitch, 90,
-                10,-90,
+                radius_um,-90,
             ],
             verbose=False) 
         #, turtle_A=[10,90]) #turtle_B=[10,-90, 100, 90])
