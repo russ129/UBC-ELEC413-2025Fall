@@ -55,6 +55,7 @@ metal_width_laser_heater = 20000
 laser_heater_distance = 100e3
 wg_heater_length = 500
 student_laser_in_y = 250e3
+laser_pad_distance = 400e3
 
 # configuration
 top_cell_name = 'Shuksan_2025_10_SiN'
@@ -68,7 +69,7 @@ height_PCM = 1e6  # reserve this space at the bottom of the chip
 laser_dy = (die_size-height_PCM) / (n_lasers+1) # spread out evenly
 laser_y = -die_size/2 + height_PCM   
 laser_x = -die_edge  + 1.5e6
-laser_design_offset = 4e6 # distance from the laser to the student design
+laser_design_offset = 3e6 # distance from the laser to the student design
 chip_Width = 8650000
 chip_Height1 = 8490000
 chip_Height2 = 8780000
@@ -477,9 +478,9 @@ for row in range(0, n_lasers):
     connect_pins_with_waveguide(inst_laser, 'opt1', inst_heater, 'opt1', waveguide_type=waveguide_type, turtle_A=[radius_um,90]) #turtle_B=[10,-90, 100, 90])
 
     # Bond pad for phase shifter heater
-    t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + cell_pad.bbox().height()) )
+    t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + laser_pad_distance+ cell_pad.bbox().height()) )
     inst_pad1 = top_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
-    t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + cell_pad.bbox().height() + pad_pitch) )
+    t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + laser_pad_distance+ cell_pad.bbox().height() + pad_pitch) )
     inst_pad2 = top_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
     
     # Metal routing
