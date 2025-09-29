@@ -125,7 +125,7 @@ jobs:
           printf "$start_delim\n$ARTIFACT_URL\n$end_delim\n" >> README.md
 
       # Aggregation script always runs on any PR
-      # this ensures link is only updated after a PR is Aggregation into SiEPIC
+      # this ensures link is only updated after a PR is Aggregated into SiEPIC
       - name: commit and push changes to README if we are in SiEPIC repo
         run: |
           git pull origin main
