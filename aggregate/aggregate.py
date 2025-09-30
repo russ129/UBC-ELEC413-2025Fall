@@ -36,7 +36,7 @@ tech = "EBeam"
 # Configuration for the arrangement
 n_lasers = 3
 tree_depth = 4 
-die_size = 9e6
+die_size = 8.78e6
 die_edge = die_size/2
 
 waveguide_type={'SiEPICfab_Shuksan_PDK':'Strip TE 1310 nm, w=350 nm', 
@@ -65,9 +65,9 @@ cell_Gap_Width = 8000
 cell_Gap_Height = 8000
 cells_rows_per_laser = 4 
 cells_columns_per_laser = 4
-height_PCM = 1e6  # reserve this space at the bottom of the chip
-laser_dy = (die_size-height_PCM) / (n_lasers+1) # spread out evenly
-laser_y = -die_size/2 + height_PCM   
+height_PCM = 1.5e6  # reserve this space at the bottom of the chip
+laser_dy = (die_size-height_PCM) / (n_lasers) # spread out evenly
+laser_y = -die_size/2 + height_PCM  + 1250e3
 laser_x = -die_edge  + 1.5e6
 laser_design_offset = 3e6 # distance from the laser to the student design
 chip_Width = 8650000
@@ -468,7 +468,6 @@ inst_tree_out_all = []
 for row in range(0, n_lasers):
     
     # laser, place at absolute position
-    laser_y += laser_dy
     t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), int(laser_y)) )
     inst_laser = top_cell.insert(pya.CellInstArray(cell_laser.cell_index(), t))
     
@@ -544,7 +543,7 @@ for row in range(0, n_lasers):
             waveguide_type=waveguide_type_routing, 
             turtle_B = [ # from the student
                 (cells_rows_per_laser-cell_row-1)*waveguide_pitch+radius_um,-90, # left away from student design
-                (cells_rows_per_laser-cell_row)*(cell_Height + cell_Gap_Height)*dbu + (cell_row + cell_column*cells_rows_per_laser)*waveguide_pitch,90, # up the column to the top
+                student_laser_in_y*ly.dbu+(cells_rows_per_laser-cell_row-1)*(cell_Height + cell_Gap_Height)*dbu + (cell_row + cell_column*cells_rows_per_laser)*waveguide_pitch,90, # up the column to the top
                 100,90, # left towards the laser
             ],
             turtle_A = [ # from the laser
@@ -565,6 +564,7 @@ for row in range(0, n_lasers):
             inst = connect_cell(inst_tree_out_all[int(d/2)], 'opt%s'%(2+(d+1)%2), 
                                 cell_terminator, 'opt1')
 
+    laser_y += laser_dy
     
 
   
