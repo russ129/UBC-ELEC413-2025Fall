@@ -60,7 +60,7 @@ jobs:
 
               Thank you for uploading your design.
 
-              If you have not already checked it, please run the SiEPIC Functional Verification in KLayout, using the menu SiEPIC-Verification-Functional Layout Check (V).  
+              If you have not already checked it, please run the SiEPIC Functional Verification in KLayout, using the menu SiEPIC-Verification-Functional Layout Check (V).  Please double-check that you have the latest version of the PDK and SiEPIC-Tools.
                     
               You may continue making updates to your design, or even contributing additonal designs (using a separate file name), until the tape-out deadline.
               `
