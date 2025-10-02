@@ -25,6 +25,8 @@ Install the PDK for develpers:
 '''
 
 import siepic_ebeam_pdk
+import shutil
+import socket
 
 # Debugging run, or complete
 draw_waveguides = True
@@ -82,6 +84,38 @@ tr_cutout_y = 8494000
 
 filename_out = 'Shuksan'
 layers_keep = ['1/99', '4/0', '11/0', '12/0', '13/0','1/10', '68/0', '81/0', '10/0', '99/0', '200/0', '131/155', '201/0', '998/0']
+
+def is_running_on_lukasc_air():
+    """Check if the script is running on lukasc@Lukass-Air computer."""
+    try:
+        hostname = socket.gethostname()
+        print(f"Hostname: {hostname}")
+        return "Lukass-" in hostname
+    except:
+        return False
+
+is_running_on_lukasc_air()
+
+def copy_to_shuksan_designs_folder(file_path):
+    """Copy the output file to SiEPIC_Shuksan_ANT_SiN_2025_08/designs folder if running on specific computer."""
+    if not is_running_on_lukasc_air():
+        return
+    
+    target_dir = "/Users/lukasc/Documents/GitHub/SiEPIC_Shuksan_ANT_SiN_2025_08/submissions/9x9"
+    
+    if not os.path.exists(target_dir):
+        print(f"Warning: Target directory {target_dir} does not exist")
+        return
+    
+    try:
+        # Copy the file
+        shutil.copy2(file_path, target_dir)
+        
+        print(f"Copied {filename} to {target_dir}")
+                
+    except Exception as e:
+        print(f"Error copying files to Shuksan designs folder: {e}")
+        
 layer_text = '10/0'
 layer_SEM = '200/0'
 layer_SEM_allow = ['edXphot1x', 'ELEC413','SiEPIC_Passives']  # which submission folder is allowed to include SEM images
@@ -575,6 +609,13 @@ path = os.path.dirname(os.path.realpath(__file__))
 filename = 'Shuksan' # top_cell_name
 file_out = export_layout(top_cell, path, filename, relative_path = '.', format='oas', screenshot=True)
 
+# Copy to Shuksan designs folder if running on specific computer
+if is_running_on_lukasc_air():
+    print("Running on Lukass-Air - copying files to SiEPIC_Shuksan_ANT_SiN_2025_08/designs")
+    copy_to_shuksan_designs_folder(file_out)
+else:
+    print(f"Running on {socket.gethostname()} - will not copy to Shuksan designs folder")
+
 
 from SiEPIC._globals import Python_Env
 if Python_Env == "Script":
@@ -585,3 +626,5 @@ if Python_Env == "Script":
 top_cell.image(os.path.join(path,filename+'.png'))
 
 print('Completed %s designs' % design_count)
+
+
