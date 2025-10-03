@@ -403,33 +403,15 @@ for f in [f for f in files_in if '.oas' in f.lower() or '.gds' in f.lower()]:
             
             design_count += 1
             cells_course.append (cell_course)
-                
-            # Measure the height of the cell that was added, and move up
-            y += max (cell_Height, subcell.bbox().height()) + cell_Gap_Height
-            # move right and bottom when we reach the top of the chip
-            if y + cell_Height > chip_Height1 and x == 0:
-                y = cell_Height + cell_Gap_Height
-                x += cell_Width + cell_Gap_Width
-            if y + cell_Height > chip_Height2:
-                y = cell_Height + cell_Gap_Height
-                x += cell_Width + cell_Gap_Width
-            # check top right cutout for PCM
-            if x + cell_Width > tr_cutout_x and y + cell_Height > tr_cutout_y:
-                # go to the next column
-                y = cell_Height + cell_Gap_Height    
-                x += cell_Width + cell_Gap_Width
-            # Check bottom right cutout for PCM
-            if x + cell_Width > br_cutout_x and y < br_cutout_y:
-                y = br_cutout_y
-            # Check bottom right cutout #2 for PCM
-            if x + cell_Width > br_cutout2_x and y < br_cutout2_y:
-                y = br_cutout2_y
-
-
+         
 
 # Enable libraries, to create waveguides, laser, etc
 enable_libraries()
 
+# Find the cell with "power_monitor" in name, where cell names are course_cells[d].name, 
+# move it to position 0 in course_cells[],
+# then copy and insert the cell in course_cells[] so that it appears at positions:
+# row*tree_depth**2
 
 
 # load the cells from the PDK
@@ -498,12 +480,22 @@ radius = to_itype(waveguide['radius'],ly.dbu)
 
 # laser_height = cell_laser.bbox().height()
 
+# Laser circuits:
 inst_tree_out_all = []
+laser_circuit_cells = []
+
 for row in range(0, n_lasers):
     
-    # laser, place at absolute position
+    # Create sub-cell for each laser circuit
+    laser_circuit_cell = layout.create_cell("laser_circuit_%d" % row)
+    laser_circuit_cells.append(laser_circuit_cell)
+    
+    # Load power monitor for this laser circuit
+    filedate = datetime.fromtimestamp(os.path.getmtime(power_monitor_file)).strftime("%Y%m%d_%H%M") if power_monitor_file else ""
+    
+    # laser, place at absolute position in the laser circuit sub-cell
     t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), int(laser_y)) )
-    inst_laser = top_cell.insert(pya.CellInstArray(cell_laser.cell_index(), t))
+    inst_laser = laser_circuit_cell.insert(pya.CellInstArray(cell_laser.cell_index(), t))
     
     # heater, attach to the laser, then move it slight away from the laser
     inst_heater =connect_cell(inst_laser, 'opt1', cell_heater, 'opt1')
@@ -512,9 +504,9 @@ for row in range(0, n_lasers):
 
     # Bond pad for phase shifter heater
     t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + laser_pad_distance+ cell_pad.bbox().height()) )
-    inst_pad1 = top_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
+    inst_pad1 = laser_circuit_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
     t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + laser_pad_distance+ cell_pad.bbox().height() + pad_pitch) )
-    inst_pad2 = top_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
+    inst_pad2 = laser_circuit_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
     
     # Metal routing
     pts = [
@@ -524,7 +516,7 @@ for row in range(0, n_lasers):
         inst_heater.find_pin('elec1').center
         ]
     path = pya.Path(pts, 20e3)
-    s = top_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
+    s = laser_circuit_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
     pts = [
         inst_pad2.find_pin('m_pin_right').center,
         [inst_heater.find_pin('elec2').center.x,
@@ -532,7 +524,7 @@ for row in range(0, n_lasers):
         inst_heater.find_pin('elec2').center
         ]
     path = pya.Path(pts, 20e3)
-    s = top_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
+    s = laser_circuit_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
         
     
     # splitter tree
@@ -541,18 +533,16 @@ for row in range(0, n_lasers):
         n_x_gc_arrays = 6
         n_y_gc_arrays = 1
         x_tree_offset = 0
-        inst_tree_in, inst_tree_out, cell_tree = y_splitter_tree(top_cell, tree_depth=tree_depth, y_splitter_cell=cell_y, library="EBeam-SiN", wg_type=waveguide_type, draw_waveguides=True)
+        inst_tree_in, inst_tree_out, cell_tree = y_splitter_tree(laser_circuit_cell, tree_depth=tree_depth, y_splitter_cell=cell_y, library="EBeam-SiN", wg_type=waveguide_type, draw_waveguides=True)
         ytree_x = inst_heater.bbox().right + x_tree_offset
         ytree_y = inst_heater.pinPoint('opt2').y # - cell_tree.bbox().height()/2
         t = Trans(Trans.R0, ytree_x, ytree_y)
-        top_cell.insert(CellInstArray(cell_tree.cell_index(), t))
+        laser_circuit_cell.insert(CellInstArray(cell_tree.cell_index(), t))
     else:
         # Handle other cases if needed
         raise Exception("Invalid tree_depth value")
     
     inst_tree_out_all += inst_tree_out
-    
-    top_cell.show()
     
     # Waveguide, heater to tree:
     connect_pins_with_waveguide(inst_heater, 'opt2', inst_tree_in, 'opt_1', waveguide_type=waveguide_type, turtle_A=[radius_um,90]) #turtle_B=[10,-90, 100, 90])
@@ -566,14 +556,14 @@ for row in range(0, n_lasers):
     cells_columns_per_laser
     cell_row, cell_column = 0, 0
     for d in range(row*tree_depth**2, min(design_count,(row+1)*tree_depth**2)):
-        # Instantiate the course student cell
+        # Instantiate the course student cell in the laser circuit cell
         position_y = cell_row * (cell_Height + cell_Gap_Height)
         position_x = cell_column * (radius + cell_Width + waveguide_pitch/dbu * cells_rows_per_laser)
         t = Trans(Trans.R0, position_x0 + position_x, position_y0 + position_y)
-        cells_course[d].insert(CellInstArray(course_cells[d].cell_index(), t))
+        inst_student = laser_circuit_cell.insert(CellInstArray(course_cells[d].cell_index(), t))    
         connect_pins_with_waveguide(
             inst_tree_out_all[int(d/2)], 'opt%s'%(2+(d+1)%2), 
-            subcell_instances[d], 'opt_laser', 
+            inst_student, 'opt_laser', 
             waveguide_type=waveguide_type_routing, 
             turtle_B = [ # from the student
                 (cells_rows_per_laser-cell_row-1)*waveguide_pitch+radius_um,-90, # left away from student design
@@ -599,7 +589,11 @@ for row in range(0, n_lasers):
                                 cell_terminator, 'opt1')
 
     laser_y += laser_dy
-    
+
+# Insert all laser circuit cells into the top cell
+for i, laser_circuit_cell in enumerate(laser_circuit_cells):
+    t = Trans(Trans.R0, 0, 0)
+    top_cell.insert(CellInstArray(laser_circuit_cell.cell_index(), t))
 
   
 
