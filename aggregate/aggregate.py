@@ -21,6 +21,79 @@ Install the PDK for develpers:
 # cd ... GitHub/SiEPICfab-EBeam-ZEP-PDK
 # pip install -e .
 
+DESCRIPTION:
+============
+
+This script creates a multi-laser photonic integrated circuit layout by:
+
+1. LOADING SUBMISSIONS:
+   - Loads all GDS/OAS files from the submissions folder
+   - Categorizes designs by course (ELEC413, edXphot1x, openEBL, SiEPIC_Passives)
+   - Processes each design and creates sub-cells with proper layer filtering
+   - Handles DBU correction and scaling if needed
+
+2. POWER MONITOR INTEGRATION:
+   - Finds the ELEC413_power_monitor.gds file in submissions
+   - Reorganizes the course_cells list to include power monitor copies
+   - Places one power monitor per laser circuit at calculated positions:
+     * Laser circuit 0: position 0
+     * Laser circuit 1: position 16 (1 * tree_depth^2)
+     * Laser circuit 2: position 32 (2 * tree_depth^2)
+
+3. LASER CIRCUIT CREATION:
+   - Creates individual sub-cells for each laser circuit (laser_circuit_0, laser_circuit_1, laser_circuit_2)
+   - Each laser circuit contains:
+     * DFB laser with heater and bond pads
+     * Metal routing for electrical connections
+     * 1x2 splitter tree (depth 4, 16 outputs)
+     * Student designs (up to 16 per laser circuit)
+     * Power monitor (1 per laser circuit)
+     * Terminators for unused splitter outputs
+
+4. WAVEGUIDE CONNECTIONS:
+   - Connects laser to heater with waveguide
+   - Connects heater to splitter tree input
+   - Routes waveguides from splitter outputs to student designs
+   - Uses SiN waveguides (800 nm width) for routing
+   - Implements proper waveguide routing with turtle graphics
+
+5. LAYOUT ORGANIZATION:
+   - Arranges student designs in a 2D grid (4x4 per laser circuit)
+   - Handles chip cutouts for PCM (Process Control Monitor)
+   - Manages proper spacing and positioning
+   - Creates final aggregated layout with all components
+
+CONFIGURATION:
+==============
+
+Key parameters:
+- n_lasers: Number of laser circuits (default: 3)
+- tree_depth: Splitter tree depth (default: 4, gives 16 outputs)
+- die_size: Chip size (default: 8.78e6 nm)
+- cell_Width/Height: Individual design cell size (800k x 500k nm)
+- wg_width: Waveguide width for routing (800 nm)
+- waveguide_type: Technology-specific waveguide types
+
+OUTPUT:
+=======
+
+- Shuksan.oas: Main layout file
+- Shuksan.png: Layout screenshot
+- Shuksan.txt: Processing log
+- Individual laser circuit cells for debugging
+
+The script automatically copies output files to the SiEPIC_Shuksan_ANT_SiN_2025_08 
+submissions folder when running on the designated development machine.
+
+RECENT MODIFICATIONS:
+====================
+
+- Added power monitor integration (one per laser circuit)
+- Implemented laser circuit sub-cell architecture
+- Added waveguide width configuration variable
+- Improved pin placement for student designs
+- Enhanced logging and error handling
+
  
 '''
 
@@ -394,14 +467,7 @@ for f in [f for f in files_in if '.oas' in f.lower() or '.gds' in f.lower()]:
             # add a pin so we can connect a waveguide from the laser tree  
             from SiEPIC.utils.layout import make_pin
             make_pin(subcell2, 'opt_laser', [0, int(student_laser_in_y)], wg_width, 'PinRec', 180, debug=False)
-              
-            #x_out = inst_tree_out[0].pinPoint('opt2').x + 100e3
-            # y_out = ytree_y - 934e3 / 2
-            
-            # intput waveguide:
-            #x_in = bbox2.left - 10e3
-            #y_in = bbox2.bottom + 10e3
-            
+                          
             design_count += 1
             cells_course.append (cell_course)
          
@@ -413,7 +479,6 @@ enable_libraries()
 # move it to position 0 in course_cells[],
 # then copy and insert the cell in course_cells[] so that it appears at positions:
 # row*tree_depth**2
-
 # Find power monitor cell and reorganize course_cells list
 power_monitor_index = None
 for i, cell in enumerate(course_cells):
@@ -590,7 +655,7 @@ for row in range(0, n_lasers):
                 100,90, # left towards the laser
             ],
             turtle_A = [ # from the laser
-                ((cells_columns_per_laser-cell_column)*cells_rows_per_laser + (cells_rows_per_laser-cell_row))*waveguide_pitch, 90,
+                radius_um+((cells_columns_per_laser-cell_column-1)*cells_rows_per_laser + (cells_rows_per_laser-cell_row-1))*waveguide_pitch, 90,
                 radius_um,-90,
             ],
             verbose=False) 
