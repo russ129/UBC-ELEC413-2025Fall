@@ -21,10 +21,85 @@ Install the PDK for develpers:
 # cd ... GitHub/SiEPICfab-EBeam-ZEP-PDK
 # pip install -e .
 
+DESCRIPTION:
+============
+
+This script creates a multi-laser photonic integrated circuit layout by:
+
+1. LOADING SUBMISSIONS:
+   - Loads all GDS/OAS files from the submissions folder
+   - Categorizes designs by course (ELEC413, edXphot1x, openEBL, SiEPIC_Passives)
+   - Processes each design and creates sub-cells with proper layer filtering
+   - Handles DBU correction and scaling if needed
+
+2. POWER MONITOR INTEGRATION:
+   - Finds the ELEC413_power_monitor.gds file in submissions
+   - Reorganizes the course_cells list to include power monitor copies
+   - Places one power monitor per laser circuit at calculated positions:
+     * Laser circuit 0: position 0
+     * Laser circuit 1: position 16 (1 * tree_depth^2)
+     * Laser circuit 2: position 32 (2 * tree_depth^2)
+
+3. LASER CIRCUIT CREATION:
+   - Creates individual sub-cells for each laser circuit (laser_circuit_0, laser_circuit_1, laser_circuit_2)
+   - Each laser circuit contains:
+     * DFB laser with heater and bond pads
+     * Metal routing for electrical connections
+     * 1x2 splitter tree (depth 4, 16 outputs)
+     * Student designs (up to 16 per laser circuit)
+     * Power monitor (1 per laser circuit)
+     * Terminators for unused splitter outputs
+
+4. WAVEGUIDE CONNECTIONS:
+   - Connects laser to heater with waveguide
+   - Connects heater to splitter tree input
+   - Routes waveguides from splitter outputs to student designs
+   - Uses SiN waveguides (800 nm width) for routing
+   - Implements proper waveguide routing with turtle graphics
+
+5. LAYOUT ORGANIZATION:
+   - Arranges student designs in a 2D grid (4x4 per laser circuit)
+   - Handles chip cutouts for PCM (Process Control Monitor)
+   - Manages proper spacing and positioning
+   - Creates final aggregated layout with all components
+
+CONFIGURATION:
+==============
+
+Key parameters:
+- n_lasers: Number of laser circuits (default: 3)
+- tree_depth: Splitter tree depth (default: 4, gives 16 outputs)
+- die_size: Chip size (default: 8.78e6 nm)
+- cell_Width/Height: Individual design cell size (800k x 500k nm)
+- wg_width: Waveguide width for routing (800 nm)
+- waveguide_type: Technology-specific waveguide types
+
+OUTPUT:
+=======
+
+- Shuksan.oas: Main layout file
+- Shuksan.png: Layout screenshot
+- Shuksan.txt: Processing log
+- Individual laser circuit cells for debugging
+
+The script automatically copies output files to the SiEPIC_Shuksan_ANT_SiN_2025_08 
+submissions folder when running on the designated development machine.
+
+RECENT MODIFICATIONS:
+====================
+
+- Added power monitor integration (one per laser circuit)
+- Implemented laser circuit sub-cell architecture
+- Added waveguide width configuration variable
+- Improved pin placement for student designs
+- Enhanced logging and error handling
+
  
 '''
 
 import siepic_ebeam_pdk
+import shutil
+import socket
 
 # Debugging run, or complete
 draw_waveguides = True
@@ -39,10 +114,11 @@ tree_depth = 4
 die_size = 8.78e6
 die_edge = die_size/2
 
+wg_width = 800
 waveguide_type={'SiEPICfab_Shuksan_PDK':'Strip TE 1310 nm, w=350 nm', 
                 'SiEPICfab_EBeam_ZEP':'Strip TE 1310 nm, w=350 nm (core-clad)',
                 'EBeam':'SiN Strip TE 1310 nm, w=800 nm'}
-waveguide_type_routing='SiN Strip TE 1310 nm, w=800 nm'
+waveguide_type_routing=f'SiN Strip TE 1310 nm, w={wg_width} nm'
 
 blank_design = "ELEC413_lukasc"  # Python design file, otherwise None for terminator.
 
@@ -82,6 +158,38 @@ tr_cutout_y = 8494000
 
 filename_out = 'Shuksan'
 layers_keep = ['1/99', '4/0', '11/0', '12/0', '13/0','1/10', '68/0', '81/0', '10/0', '99/0', '200/0', '131/155', '201/0', '998/0']
+
+def is_running_on_lukasc_air():
+    """Check if the script is running on lukasc@Lukass-Air computer."""
+    try:
+        hostname = socket.gethostname()
+        print(f"Hostname: {hostname}")
+        return "Lukass-" in hostname
+    except:
+        return False
+
+is_running_on_lukasc_air()
+
+def copy_to_shuksan_designs_folder(file_path):
+    """Copy the output file to SiEPIC_Shuksan_ANT_SiN_2025_08/designs folder if running on specific computer."""
+    if not is_running_on_lukasc_air():
+        return
+    
+    target_dir = "/Users/lukasc/Documents/GitHub/SiEPIC_Shuksan_ANT_SiN_2025_08/submissions/9x9"
+    
+    if not os.path.exists(target_dir):
+        print(f"Warning: Target directory {target_dir} does not exist")
+        return
+    
+    try:
+        # Copy the file
+        shutil.copy2(file_path, target_dir)
+        
+        print(f"Copied {filename} to {target_dir}")
+                
+    except Exception as e:
+        print(f"Error copying files to Shuksan designs folder: {e}")
+        
 layer_text = '10/0'
 layer_SEM = '200/0'
 layer_SEM_allow = ['edXphot1x', 'ELEC413','SiEPIC_Passives']  # which submission folder is allowed to include SEM images
@@ -356,46 +464,41 @@ for f in [f for f in files_in if '.oas' in f.lower() or '.gds' in f.lower()]:
             
             log('  - Placed at position: %s, %s' % (x,y) )
             
-            # connect to the laser tree  
+            # add a pin so we can connect a waveguide from the laser tree  
             from SiEPIC.utils.layout import make_pin
-            make_pin(subcell, 'opt_laser', [0, int(student_laser_in_y)], 800, 'PinRec', 180, debug=False)
-              
-            #x_out = inst_tree_out[0].pinPoint('opt2').x + 100e3
-            # y_out = ytree_y - 934e3 / 2
-            
-            # intput waveguide:
-            #x_in = bbox2.left - 10e3
-            #y_in = bbox2.bottom + 10e3
-            
+            make_pin(subcell2, 'opt_laser', [0, int(student_laser_in_y)], wg_width, 'PinRec', 180, debug=False)
+                          
             design_count += 1
             cells_course.append (cell_course)
-                
-            # Measure the height of the cell that was added, and move up
-            y += max (cell_Height, subcell.bbox().height()) + cell_Gap_Height
-            # move right and bottom when we reach the top of the chip
-            if y + cell_Height > chip_Height1 and x == 0:
-                y = cell_Height + cell_Gap_Height
-                x += cell_Width + cell_Gap_Width
-            if y + cell_Height > chip_Height2:
-                y = cell_Height + cell_Gap_Height
-                x += cell_Width + cell_Gap_Width
-            # check top right cutout for PCM
-            if x + cell_Width > tr_cutout_x and y + cell_Height > tr_cutout_y:
-                # go to the next column
-                y = cell_Height + cell_Gap_Height    
-                x += cell_Width + cell_Gap_Width
-            # Check bottom right cutout for PCM
-            if x + cell_Width > br_cutout_x and y < br_cutout_y:
-                y = br_cutout_y
-            # Check bottom right cutout #2 for PCM
-            if x + cell_Width > br_cutout2_x and y < br_cutout2_y:
-                y = br_cutout2_y
-
-
+         
 
 # Enable libraries, to create waveguides, laser, etc
 enable_libraries()
 
+# Find the cell with "power_monitor" in name, where cell names are course_cells[d].name, 
+# move it to position 0 in course_cells[],
+# then copy and insert the cell in course_cells[] so that it appears at positions:
+# row*tree_depth**2
+# Find power monitor cell and reorganize course_cells list
+power_monitor_index = None
+for i, cell in enumerate(course_cells):
+    if "power_monitor" in cell.name.lower():
+        power_monitor_index = i
+        log("Found power monitor cell at index %d: %s" % (i, cell.name))
+        break
+
+if power_monitor_index is not None:
+    # Move power monitor to position 0
+    power_monitor_cell = course_cells.pop(power_monitor_index)
+    #course_cells.insert(0, power_monitor_cell)
+    log("Popped power monitor cell")
+    
+    # Create copies of power monitor for each laser circuit
+    for row in range(n_lasers):
+        course_cells.insert(row * tree_depth**2, power_monitor_cell)
+        log("Created power monitor copy for laser circuit %d at position %d" % (row, row * tree_depth**2))
+else:
+    log("WARNING: No power monitor cell found in course_cells")
 
 
 # load the cells from the PDK
@@ -464,12 +567,19 @@ radius = to_itype(waveguide['radius'],ly.dbu)
 
 # laser_height = cell_laser.bbox().height()
 
+# Laser circuits:
 inst_tree_out_all = []
+laser_circuit_cells = []
+
 for row in range(0, n_lasers):
     
-    # laser, place at absolute position
+    # Create sub-cell for each laser circuit
+    laser_circuit_cell = layout.create_cell("laser_circuit_%d" % row)
+    laser_circuit_cells.append(laser_circuit_cell)
+    
+    # laser, place at absolute position in the laser circuit sub-cell
     t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), int(laser_y)) )
-    inst_laser = top_cell.insert(pya.CellInstArray(cell_laser.cell_index(), t))
+    inst_laser = laser_circuit_cell.insert(pya.CellInstArray(cell_laser.cell_index(), t))
     
     # heater, attach to the laser, then move it slight away from the laser
     inst_heater =connect_cell(inst_laser, 'opt1', cell_heater, 'opt1')
@@ -478,9 +588,9 @@ for row in range(0, n_lasers):
 
     # Bond pad for phase shifter heater
     t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + laser_pad_distance+ cell_pad.bbox().height()) )
-    inst_pad1 = top_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
+    inst_pad1 = laser_circuit_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
     t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), inst_laser.bbox().top + laser_pad_distance+ cell_pad.bbox().height() + pad_pitch) )
-    inst_pad2 = top_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
+    inst_pad2 = laser_circuit_cell.insert(pya.CellInstArray(cell_pad.cell_index(), t))
     
     # Metal routing
     pts = [
@@ -490,7 +600,7 @@ for row in range(0, n_lasers):
         inst_heater.find_pin('elec1').center
         ]
     path = pya.Path(pts, 20e3)
-    s = top_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
+    s = laser_circuit_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
     pts = [
         inst_pad2.find_pin('m_pin_right').center,
         [inst_heater.find_pin('elec2').center.x,
@@ -498,7 +608,7 @@ for row in range(0, n_lasers):
         inst_heater.find_pin('elec2').center
         ]
     path = pya.Path(pts, 20e3)
-    s = top_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
+    s = laser_circuit_cell.shapes(ly.layer(ly.TECHNOLOGY['M2_router'])).insert(path)
         
     
     # splitter tree
@@ -507,18 +617,16 @@ for row in range(0, n_lasers):
         n_x_gc_arrays = 6
         n_y_gc_arrays = 1
         x_tree_offset = 0
-        inst_tree_in, inst_tree_out, cell_tree = y_splitter_tree(top_cell, tree_depth=tree_depth, y_splitter_cell=cell_y, library="EBeam-SiN", wg_type=waveguide_type, draw_waveguides=True)
+        inst_tree_in, inst_tree_out, cell_tree = y_splitter_tree(laser_circuit_cell, tree_depth=tree_depth, y_splitter_cell=cell_y, library="EBeam-SiN", wg_type=waveguide_type, draw_waveguides=True)
         ytree_x = inst_heater.bbox().right + x_tree_offset
         ytree_y = inst_heater.pinPoint('opt2').y # - cell_tree.bbox().height()/2
         t = Trans(Trans.R0, ytree_x, ytree_y)
-        top_cell.insert(CellInstArray(cell_tree.cell_index(), t))
+        laser_circuit_cell.insert(CellInstArray(cell_tree.cell_index(), t))
     else:
         # Handle other cases if needed
         raise Exception("Invalid tree_depth value")
     
     inst_tree_out_all += inst_tree_out
-    
-    top_cell.show()
     
     # Waveguide, heater to tree:
     connect_pins_with_waveguide(inst_heater, 'opt2', inst_tree_in, 'opt_1', waveguide_type=waveguide_type, turtle_A=[radius_um,90]) #turtle_B=[10,-90, 100, 90])
@@ -532,14 +640,14 @@ for row in range(0, n_lasers):
     cells_columns_per_laser
     cell_row, cell_column = 0, 0
     for d in range(row*tree_depth**2, min(design_count,(row+1)*tree_depth**2)):
-        # Instantiate the course student cell
+        # Instantiate the course student cell in the laser circuit cell
         position_y = cell_row * (cell_Height + cell_Gap_Height)
         position_x = cell_column * (radius + cell_Width + waveguide_pitch/dbu * cells_rows_per_laser)
         t = Trans(Trans.R0, position_x0 + position_x, position_y0 + position_y)
-        cells_course[d].insert(CellInstArray(course_cells[d].cell_index(), t))
+        inst_student = laser_circuit_cell.insert(CellInstArray(course_cells[d].cell_index(), t))    
         connect_pins_with_waveguide(
             inst_tree_out_all[int(d/2)], 'opt%s'%(2+(d+1)%2), 
-            subcell_instances[d], 'opt_laser', 
+            inst_student, 'opt_laser', 
             waveguide_type=waveguide_type_routing, 
             turtle_B = [ # from the student
                 (cells_rows_per_laser-cell_row-1)*waveguide_pitch+radius_um,-90, # left away from student design
@@ -547,7 +655,7 @@ for row in range(0, n_lasers):
                 100,90, # left towards the laser
             ],
             turtle_A = [ # from the laser
-                ((cells_columns_per_laser-cell_column)*cells_rows_per_laser + (cells_rows_per_laser-cell_row))*waveguide_pitch, 90,
+                radius_um+((cells_columns_per_laser-cell_column-1)*cells_rows_per_laser + (cells_rows_per_laser-cell_row-1))*waveguide_pitch, 90,
                 radius_um,-90,
             ],
             verbose=False) 
@@ -565,7 +673,11 @@ for row in range(0, n_lasers):
                                 cell_terminator, 'opt1')
 
     laser_y += laser_dy
-    
+
+# Insert all laser circuit cells into the top cell
+for i, laser_circuit_cell in enumerate(laser_circuit_cells):
+    t = Trans(Trans.R0, 0, 0)
+    top_cell.insert(CellInstArray(laser_circuit_cell.cell_index(), t))
 
   
 
@@ -574,6 +686,13 @@ import os
 path = os.path.dirname(os.path.realpath(__file__))
 filename = 'Shuksan' # top_cell_name
 file_out = export_layout(top_cell, path, filename, relative_path = '.', format='oas', screenshot=True)
+
+# Copy to Shuksan designs folder if running on specific computer
+if is_running_on_lukasc_air():
+    print("Running on Lukass-Air - copying files to SiEPIC_Shuksan_ANT_SiN_2025_08/designs")
+    copy_to_shuksan_designs_folder(file_out)
+else:
+    print(f"Running on {socket.gethostname()} - will not copy to Shuksan designs folder")
 
 
 from SiEPIC._globals import Python_Env
@@ -585,3 +704,5 @@ if Python_Env == "Script":
 top_cell.image(os.path.join(path,filename+'.png'))
 
 print('Completed %s designs' % design_count)
+
+
