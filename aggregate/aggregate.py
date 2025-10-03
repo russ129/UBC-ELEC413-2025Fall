@@ -41,10 +41,11 @@ tree_depth = 4
 die_size = 8.78e6
 die_edge = die_size/2
 
+wg_width = 800
 waveguide_type={'SiEPICfab_Shuksan_PDK':'Strip TE 1310 nm, w=350 nm', 
                 'SiEPICfab_EBeam_ZEP':'Strip TE 1310 nm, w=350 nm (core-clad)',
                 'EBeam':'SiN Strip TE 1310 nm, w=800 nm'}
-waveguide_type_routing='SiN Strip TE 1310 nm, w=800 nm'
+waveguide_type_routing=f'SiN Strip TE 1310 nm, w={wg_width} nm'
 
 blank_design = "ELEC413_lukasc"  # Python design file, otherwise None for terminator.
 
@@ -390,9 +391,9 @@ for f in [f for f in files_in if '.oas' in f.lower() or '.gds' in f.lower()]:
             
             log('  - Placed at position: %s, %s' % (x,y) )
             
-            # connect to the laser tree  
+            # add a pin so we can connect a waveguide from the laser tree  
             from SiEPIC.utils.layout import make_pin
-            make_pin(subcell, 'opt_laser', [0, int(student_laser_in_y)], 800, 'PinRec', 180, debug=False)
+            make_pin(subcell2, 'opt_laser', [0, int(student_laser_in_y)], wg_width, 'PinRec', 180, debug=False)
               
             #x_out = inst_tree_out[0].pinPoint('opt2').x + 100e3
             # y_out = ytree_y - 934e3 / 2
@@ -412,6 +413,27 @@ enable_libraries()
 # move it to position 0 in course_cells[],
 # then copy and insert the cell in course_cells[] so that it appears at positions:
 # row*tree_depth**2
+
+# Find power monitor cell and reorganize course_cells list
+power_monitor_index = None
+for i, cell in enumerate(course_cells):
+    if "power_monitor" in cell.name.lower():
+        power_monitor_index = i
+        log("Found power monitor cell at index %d: %s" % (i, cell.name))
+        break
+
+if power_monitor_index is not None:
+    # Move power monitor to position 0
+    power_monitor_cell = course_cells.pop(power_monitor_index)
+    #course_cells.insert(0, power_monitor_cell)
+    log("Popped power monitor cell")
+    
+    # Create copies of power monitor for each laser circuit
+    for row in range(n_lasers):
+        course_cells.insert(row * tree_depth**2, power_monitor_cell)
+        log("Created power monitor copy for laser circuit %d at position %d" % (row, row * tree_depth**2))
+else:
+    log("WARNING: No power monitor cell found in course_cells")
 
 
 # load the cells from the PDK
@@ -489,9 +511,6 @@ for row in range(0, n_lasers):
     # Create sub-cell for each laser circuit
     laser_circuit_cell = layout.create_cell("laser_circuit_%d" % row)
     laser_circuit_cells.append(laser_circuit_cell)
-    
-    # Load power monitor for this laser circuit
-    filedate = datetime.fromtimestamp(os.path.getmtime(power_monitor_file)).strftime("%Y%m%d_%H%M") if power_monitor_file else ""
     
     # laser, place at absolute position in the laser circuit sub-cell
     t = pya.Trans.from_s('r0 %s,%s' % (int(laser_x), int(laser_y)) )
